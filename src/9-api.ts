@@ -133,7 +133,7 @@ const MyApi = HttpApi.make("MyApi").add(
       HttpApiEndpoint.get("getUserById")`/users/${UserIdParam}/`
         .annotate(OpenApi.Description, "Get user by id")
         .addSuccess(User)
-        .addError(BadError)
+        // TODO: Add this and see if it becomes visible on client .addError(BadError)
         .addError(HttpApiError.NotFound),
     ),
 );
