@@ -146,8 +146,9 @@ const DefaultGroup = HttpApiBuilder.group(
       .handle("hello-world", () => Effect.succeed("你好， 世界！"))
       .handle(
         "listUsers",
-        ({ urlParams: { limit, offset } }) =>
+        (params) =>
           Effect.gen(function*() {
+            const { limit, offset } = params.urlParams;
             const db = yield* Db;
             const { getRandom } = yield* Random;
             const rn = yield* getRandom;
