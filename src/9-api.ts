@@ -43,10 +43,6 @@ class Db extends Context.Tag("DB")<Db, {
 
 type User = Schema.Schema.Type<typeof User>;
 
-const Foo = Schema.TaggedStruct("Foo", {
-  id: Schema.String,
-});
-
 const MockDb = Layer.effect(
   Db,
   Effect.gen(function*() {
@@ -90,7 +86,6 @@ const userIdParam = HttpApiSchema.param("userid", UserId);
 
 const MyApi = HttpApi.make("MyApi").add(
   HttpApiGroup.make("Base")
-    .add(HttpApiEndpoint.get("foo")`/foo/`.addSuccess(Foo))
     .add(HttpApiEndpoint.get("hello-world")`/`.addSuccess(Schema.String))
     .add(
       HttpApiEndpoint.get("listUsers")`/users/`.addSuccess(Schema.Array(User)).addError(BadError).addError(
@@ -153,8 +148,7 @@ const DefaultGroup = HttpApiBuilder.group(
           yield* Effect.log(`Saving user, ${params.payload.id}`);
           const db = yield* Db;
           yield* db.saveUser(params.payload);
-        }))
-      .handle("foo", () => Effect.succeed(Foo.make({ id: "erer" }))),
+        })),
 );
 
 const LiveApi = HttpApiBuilder.api(MyApi).pipe(Layer.provide(DefaultGroup));
@@ -171,26 +165,26 @@ Layer.launch(ServerLive).pipe(
   BunRuntime.runMain,
 );
 
-const program = Effect.gen(function*() {
-  const client = yield* HttpApiClient.make(MyApi, {
-    baseUrl: "http://localhost:3000",
-  });
-  const hello = (client.Base.getUserById({ path: { userid: UserId.make("yolo") } })).pipe(
-    Effect.andThen(Effect.log),
-  ).pipe(
-    Effect.catchTag("NotFound", () => Effect.log("Not found")),
-  );
-  yield* Effect.schedule(
-    hello,
-    Schedule.intersect(Schedule.fibonacci("1 second"), Schedule.recurs(5)),
-  );
-}).pipe(
-  Effect.catchTags({
-    "ParseError": () => Effect.log("ParseError"),
-    "HttpApiDecodeError": () => Effect.log("No decode"),
-    "ResponseError": () => Effect.log("Resp"),
-    "RequestError": () => Effect.log("REquest handle"),
-  }),
-);
-
-Effect.runFork(program.pipe(Effect.provide(FetchHttpClient.layer)));
+// const program = Effect.gen(function*() {
+//   const client = yield* HttpApiClient.make(MyApi, {
+//     baseUrl: "http://localhost:3000",
+//   });
+//   const hello = (client.Base.getUserById({ path: { userid: UserId.make("yolo") } })).pipe(
+//     Effect.andThen(Effect.log),
+//   ).pipe(
+//     Effect.catchTag("NotFound", () => Effect.log("Not found")),
+//   );
+//   yield* Effect.schedule(
+//     hello,
+//     Schedule.intersect(Schedule.fibonacci("1 second"), Schedule.recurs(5)),
+//   );
+// }).pipe(
+//   Effect.catchTags({
+//     "ParseError": () => Effect.log("ParseError"),
+//     "HttpApiDecodeError": () => Effect.log("No decode"),
+//     "ResponseError": () => Effect.log("Resp"),
+//     "RequestError": () => Effect.log("REquest handle"),
+//   }),
+// );
+//
+// Effect.runFork(program.pipe(Effect.provide(FetchHttpClient.layer)));
