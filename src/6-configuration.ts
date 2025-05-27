@@ -1,6 +1,6 @@
 import { FetchHttpClient, HttpClient, Terminal } from "@effect/platform";
-import { BunContext, BunHttpPlatform, BunRuntime } from "@effect/platform-bun";
-import { Clock, Config, ConfigProvider, Context, Data, Effect, Either, Layer, Option, Schedule } from "effect";
+import { BunContext, BunRuntime } from "@effect/platform-bun";
+import { Clock, Config, ConfigProvider, Context, Data, Effect, Layer, Option } from "effect";
 
 class AciValidationError extends Data.TaggedError("AciValidationError")<{ aciNumber: string }> {}
 

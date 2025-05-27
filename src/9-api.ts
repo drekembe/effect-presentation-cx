@@ -11,46 +11,41 @@ import {
   OpenApi,
 } from "@effect/platform";
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun";
-import * as Context from "effect/Context";
-import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
-import * as Ref from "effect/Ref";
-import * as Schedule from "effect/Schedule";
-import * as Schema from "effect/Schema";
+import { Array, Context, Effect, Layer, Option, Order, pipe, Ref, Schedule, Schema } from "effect";
 
-class Nope extends Schema.TaggedError<Nope>()(
-  "Nope",
+class BadError extends Schema.TaggedError<BadError>()(
+  "BadError",
   {
     severity: Schema.Number,
   },
   HttpApiSchema.annotations({ status: 409 }),
 ) {}
 
-const rr = Effect.gen(function*() {
-  yield* Effect.log("going once");
-  yield* Effect.sleep("1 seconds");
-  yield* Effect.fail(new Error("what"));
-}).pipe(
-  Effect.retry({ times: 3 }),
-);
-
-class Random extends Context.Tag("Random")<Random, { getRandom: Effect.Effect<number> }>() {}
-
-const UserId = Schema.NonEmptyString.pipe(Schema.brand("User"));
+const UserId = Schema.NonEmptyString.pipe(Schema.brand("UserId"));
 type UserId = Schema.Schema.Type<typeof UserId>;
 
 const User = Schema.Struct({
   id: UserId,
   username: Schema.NonEmptyString,
+}).annotations({
+  schemaId: "User",
+  title: "The user",
+  description: "This is a user",
 });
 
-type User = Schema.Schema.Type<typeof User>;
+class Random extends Context.Tag("Random")<Random, { getRandom: Effect.Effect<number> }>() {}
 
 class Db extends Context.Tag("DB")<Db, {
   saveUser: (u: User) => Effect.Effect<void>;
   getUser: (id: UserId) => Effect.Effect<Option.Option<User>>;
+  getAllUsers: (arg?: { limit: number | undefined; offset: number | undefined }) => Effect.Effect<Array<User>>;
 }>() {}
+
+type User = Schema.Schema.Type<typeof User>;
+
+const Foo = Schema.TaggedStruct("Foo", {
+  id: Schema.String,
+});
 
 const MockDb = Layer.effect(
   Db,
@@ -63,61 +58,64 @@ const MockDb = Layer.effect(
           Effect.tap(() => Effect.log(`Saving user with id ${u.id}`)),
         ),
       getUser: (id) => Ref.get(store).pipe(Effect.map(value => Option.fromNullable(value[id]))),
+      getAllUsers: (arg) =>
+        Effect.gen(function*() {
+          const { limit, offset } = arg ?? {};
+          const usersMap = yield* Ref.get(store);
+          const usersList = pipe(
+            usersMap,
+            Array.fromRecord,
+            Array.map(([_, user]) => user),
+            Array.sortBy(
+              Order.mapInput(Order.string, (user) => user.username),
+            ),
+            Array.drop(offset ?? 0),
+            Array.take(limit ?? 1000),
+          );
+
+          return yield* Effect.succeed(usersList);
+        }),
     });
   }),
 );
 
-const idParam = HttpApiSchema.param(
-  "id",
-  Schema.NonEmptyString.annotations({ description: "OK id param" }).pipe(
-    Schema.compose(Schema.Trim),
-    Schema.maxLength(5),
-  ).annotations({ description: "wwowowo " }),
+const RandomLive = Layer.succeed(
+  Random,
+  Random.of({
+    getRandom: Effect.sync(() => Math.random()),
+  }),
 );
 
 const userIdParam = HttpApiSchema.param("userid", UserId);
 
-const PostMe = Schema.Struct({
-  id: Schema.NonEmptyTrimmedString,
-  name: Schema.NonEmptyString,
-});
-
-const grp = HttpApiGroup.make("Wased").add(HttpApiEndpoint.get("nyoo")`/hehehe`.addSuccess(Schema.String));
-
-const MyApi = HttpApi.make("MyApi").add(grp).add(
+const MyApi = HttpApi.make("MyApi").add(
   HttpApiGroup.make("Base")
-    .add(HttpApiEndpoint.get("helloWorld")`/`.addSuccess(Schema.String))
+    .add(HttpApiEndpoint.get("foo")`/foo/`.addSuccess(Foo))
+    .add(HttpApiEndpoint.get("hello-world")`/`.addSuccess(Schema.String))
     .add(
-      HttpApiEndpoint.get("whatup")`/${idParam}/`.addSuccess(Schema.String).addError(Nope).addError(
+      HttpApiEndpoint.get("listUsers")`/users/`.addSuccess(Schema.Array(User)).addError(BadError).addError(
         HttpApiError.Forbidden,
       ).annotate(
         OpenApi.Description,
-        "Whatup endpoint",
+        "Get all users",
       ).setUrlParams(
         Schema.Struct({
-          // Parameter "page" for pagination
-          page: Schema.optionalWith(Schema.NumberFromString, { exact: true }).annotations({ description: "Pagegege" }),
-          // Parameter "sort" for sorting options with an added description
-          sort: Schema.optionalWith(
-            Schema.String.annotations({
-              description: "Sorting criteria (e.g., 'name', 'date eg')",
+          limit: Schema.optionalWith(Schema.NumberFromString, { exact: true }).annotations({
+            description: "Limit to n entries",
+          }),
+          offset: Schema.optionalWith(
+            Schema.NumberFromString.annotations({
+              description: "Offset value",
             }),
             { exact: true },
           ),
         }),
       ),
     )
-    .add(HttpApiEndpoint.post("postMe")`/big-post/`.setPayload(PostMe).addSuccess(Schema.String))
     .add(HttpApiEndpoint.post("createUser")`/users/`.setPayload(User))
-    .add(HttpApiEndpoint.get("getUserById")`/users/${userIdParam}/`.addSuccess(User)).addError(HttpApiError.NotFound)
-    .prefix("/groupPrefix")
-    .annotate(OpenApi.Description, "Based"),
-);
-
-const DfGrp2 = HttpApiBuilder.group(
-  MyApi,
-  "Wased",
-  handlers => handlers.handle("nyoo", () => Effect.succeed("hehehe")),
+    .add(HttpApiEndpoint.get("getUserById")`/users/${userIdParam}/`.addSuccess(User).addError(HttpApiError.NotFound))
+    .prefix("/v3")
+    .annotate(OpenApi.Description, "My Api Group"),
 );
 
 const DefaultGroup = HttpApiBuilder.group(
@@ -125,21 +123,19 @@ const DefaultGroup = HttpApiBuilder.group(
   "Base",
   handlers =>
     handlers
-      .handle("postMe", () => {
-        return Effect.succeed("OKOKOKOK");
-      })
-      .handle("helloWorld", () => Effect.succeed("Yo"))
+      .handle("hello-world", () => Effect.succeed("Yo"))
       .handle(
-        "whatup",
-        (params) =>
+        "listUsers",
+        ({ urlParams: { limit, offset } }) =>
           Effect.gen(function*() {
+            const db = yield* Db;
             const { getRandom } = yield* Random;
             const rn = yield* getRandom;
-            yield* Effect.log(rn);
-            if (rn > 0.5) {
-              return yield* Effect.fail(new Nope({ severity: rn }));
+            if (rn > 0.7) {
+              return yield* Effect.fail(new BadError({ severity: rn }));
             }
-            return yield* Effect.succeed(`${params.path.id}${rn}`);
+            const users = yield* db.getAllUsers({ limit, offset });
+            return users;
           }),
       )
       .handle("getUserById", (params) =>
@@ -157,17 +153,11 @@ const DefaultGroup = HttpApiBuilder.group(
           yield* Effect.log(`Saving user, ${params.payload.id}`);
           const db = yield* Db;
           yield* db.saveUser(params.payload);
-        })),
+        }))
+      .handle("foo", () => Effect.succeed(Foo.make({ id: "erer" }))),
 );
 
-const LiveApi = HttpApiBuilder.api(MyApi).pipe(Layer.provide(DefaultGroup), Layer.provide(DfGrp2));
-
-const RandomLive = Layer.succeed(
-  Random,
-  Random.of({
-    getRandom: Effect.sync(() => Math.random()),
-  }),
-);
+const LiveApi = HttpApiBuilder.api(MyApi).pipe(Layer.provide(DefaultGroup));
 
 const ServerLive = HttpApiBuilder.serve().pipe(
   Layer.provide(HttpApiSwagger.layer()),
@@ -185,11 +175,10 @@ const program = Effect.gen(function*() {
   const client = yield* HttpApiClient.make(MyApi, {
     baseUrl: "http://localhost:3000",
   });
-  yield* rr;
-  const hello = (client.Base.whatup({ path: { id: "你好  " }, urlParams: {} })).pipe(
+  const hello = (client.Base.getUserById({ path: { userid: UserId.make("yolo") } })).pipe(
     Effect.andThen(Effect.log),
   ).pipe(
-    Effect.catchTag("Nope", (nope) => Effect.log(`Recovering from Nope: ${nope.severity}`)),
+    Effect.catchTag("NotFound", () => Effect.log("Not found")),
   );
   yield* Effect.schedule(
     hello,
@@ -197,7 +186,6 @@ const program = Effect.gen(function*() {
   );
 }).pipe(
   Effect.catchTags({
-    "Forbidden": () => Effect.log("Forbidden"),
     "ParseError": () => Effect.log("ParseError"),
     "HttpApiDecodeError": () => Effect.log("No decode"),
     "ResponseError": () => Effect.log("Resp"),

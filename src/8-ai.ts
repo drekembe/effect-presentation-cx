@@ -26,7 +26,7 @@ const generateMtgCard = Effect.gen(function*() {
   return response;
 });
 
-const main = Effect.gen(function*() {
+const program = Effect.gen(function*() {
   const gpt4o = yield* OpenAiLanguageModel.model("gpt-4o");
   const response = yield* gpt4o.use(generateMtgCard);
   yield* Effect.log(response.value);
@@ -37,5 +37,5 @@ const OpenAiWithHttp = OpenAiClient.layerConfig({
 }).pipe(Layer.provide(FetchHttpClient.layer));
 
 BunRuntime.runMain(
-  main.pipe(Effect.provide(BunContext.layer), Effect.provide(OpenAiWithHttp)),
+  program.pipe(Effect.provide(BunContext.layer), Effect.provide(OpenAiWithHttp)),
 );
