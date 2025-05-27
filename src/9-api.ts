@@ -21,12 +21,23 @@ class BadError extends Schema.TaggedError<BadError>()(
   HttpApiSchema.annotations({ status: 409 }),
 ) {}
 
+const BooleanFromString = Schema.transform(
+  Schema.Literal("on", "off"),
+  Schema.Boolean,
+  {
+    strict: true,
+    decode: (s) => s === "on",
+    encode: (bool) => (bool ? "on" : "off"),
+  },
+);
+
 const UserId = Schema.NonEmptyString.pipe(Schema.brand("UserId"));
-type UserId = Schema.Schema.Type<typeof UserId>;
+type UserId = typeof UserId.Type;
 
 const User = Schema.Struct({
   id: UserId,
   username: Schema.NonEmptyString,
+  enabled: Schema.optionalWith(BooleanFromString, { default: () => true }),
 }).annotations({
   identifier: "User",
   schemaId: "User",
