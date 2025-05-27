@@ -28,6 +28,7 @@ const User = Schema.Struct({
   id: UserId,
   username: Schema.NonEmptyString,
 }).annotations({
+  identifier: "User",
   schemaId: "User",
   title: "The user",
   description: "This is a user",
