@@ -83,35 +83,48 @@ const RandomLive = Layer.succeed(
   }),
 );
 
-const userIdParam = HttpApiSchema.param("userid", UserId);
+const UserIdParam = HttpApiSchema.param("userid", UserId);
+
+const PaginationUrlParams = Schema.Struct({
+  limit: Schema.optionalWith(Schema.NumberFromString, { exact: true }).annotations({
+    description: "Limit to n entries",
+  }),
+  offset: Schema.optionalWith(
+    Schema.NumberFromString.annotations({
+      description: "Offset value",
+    }),
+    { exact: true },
+  ),
+});
 
 const MyApi = HttpApi.make("MyApi").add(
-  HttpApiGroup.make("Base")
-    .add(HttpApiEndpoint.get("hello-world")`/`.addSuccess(Schema.String))
+  HttpApiGroup.make("Base").prefix("/v3")
+    .annotate(OpenApi.Description, "My Api Group")
     .add(
-      HttpApiEndpoint.get("listUsers")`/users/`.addSuccess(Schema.Array(User)).addError(BadError).addError(
-        HttpApiError.Forbidden,
-      ).annotate(
-        OpenApi.Description,
-        "Get all users",
-      ).setUrlParams(
-        Schema.Struct({
-          limit: Schema.optionalWith(Schema.NumberFromString, { exact: true }).annotations({
-            description: "Limit to n entries",
-          }),
-          offset: Schema.optionalWith(
-            Schema.NumberFromString.annotations({
-              description: "Offset value",
-            }),
-            { exact: true },
-          ),
-        }),
-      ),
+      HttpApiEndpoint.get("hello-world")`/`
+        .annotate(OpenApi.Description, "Hello world")
+        .addSuccess(Schema.String),
     )
-    .add(HttpApiEndpoint.post("createUser")`/users/`.setPayload(User))
-    .add(HttpApiEndpoint.get("getUserById")`/users/${userIdParam}/`.addSuccess(User).addError(HttpApiError.NotFound))
-    .prefix("/v3")
-    .annotate(OpenApi.Description, "My Api Group"),
+    .add(
+      HttpApiEndpoint.get("listUsers")`/users/`
+        .annotate(OpenApi.Description, "Get all users")
+        .setUrlParams(PaginationUrlParams)
+        .addSuccess(Schema.Array(User))
+        .addError(BadError)
+        .addError(HttpApiError.Forbidden),
+    )
+    .add(
+      HttpApiEndpoint.post("createUser")`/users/`
+        .annotate(OpenApi.Description, "Create a user")
+        .setPayload(User),
+    )
+    .add(
+      HttpApiEndpoint.get("getUserById")`/users/${UserIdParam}/`
+        .annotate(OpenApi.Description, "Get user by id")
+        .addSuccess(User)
+        .addError(BadError)
+        .addError(HttpApiError.NotFound),
+    ),
 );
 
 const DefaultGroup = HttpApiBuilder.group(
@@ -119,7 +132,7 @@ const DefaultGroup = HttpApiBuilder.group(
   "Base",
   handlers =>
     handlers
-      .handle("hello-world", () => Effect.succeed("Yo"))
+      .handle("hello-world", () => Effect.succeed("你好， 世界！"))
       .handle(
         "listUsers",
         ({ urlParams: { limit, offset } }) =>
@@ -187,5 +200,5 @@ Layer.launch(ServerLive).pipe(
 //     "RequestError": () => Effect.log("REquest handle"),
 //   }),
 // );
-//
+
 // Effect.runFork(program.pipe(Effect.provide(FetchHttpClient.layer)));
