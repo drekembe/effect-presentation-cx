@@ -55,21 +55,20 @@ class Db extends Context.Tag("DB")<Db, {
 
 type User = Schema.Schema.Type<typeof User>;
 
-const MockDb = Layer.effect(
+const MockDb = Layer.sync(
   Db,
-  Effect.gen(function*() {
-    const store = yield* Ref.make<Record<UserId, User>>({});
+  () => {
+    const store: Record<UserId, User> = {};
     return Db.of({
-      saveUser: (u) =>
-        Ref.get(store).pipe(
-          Effect.andThen(value => Ref.set(store, { ...value, [u.id]: u })),
-          Effect.tap(() => Effect.log(`Saving user with id ${u.id}`)),
-        ),
-      getUser: (id) => Ref.get(store).pipe(Effect.map(value => Option.fromNullable(value[id]))),
+      saveUser: (u) => {
+        store[u.id] = u;
+        return Effect.void;
+      },
+      getUser: (id) => Effect.succeed(Option.fromNullable(store[id])),
       getAllUsers: (arg) =>
         Effect.gen(function*() {
           const { limit, offset } = arg ?? {};
-          const usersMap = yield* Ref.get(store);
+          const usersMap = store;
           const usersList = pipe(
             usersMap,
             Array.fromRecord,
@@ -84,7 +83,7 @@ const MockDb = Layer.effect(
           return yield* Effect.succeed(usersList);
         }),
     });
-  }),
+  },
 );
 
 const RandomLive = Layer.succeed(
